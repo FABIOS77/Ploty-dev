@@ -1,0 +1,198 @@
+// Prisma schema for Ploty - Gamified Project & Activity Management Platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum ProjectRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum ActivityType {
+  SINGLE
+  RECURRING
+}
+
+enum RecurrencePattern {
+  NONE
+  DAILY
+  WEEKLY
+  MONTHLY
+  CUSTOM_DAYS
+}
+
+enum ActivityStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+}
+
+enum ActivityPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RewardType {
+  THEME
+  MEDAL
+  TITLE
+  AVATAR_FRAME
+}
+
+// ==========================================
+// MODELS
+// ==========================================
+
+model User {
+  id              String        @id @default(uuid())
+  email           String        @unique
+  username        String        @unique
+  passwordHash    String
+  avatarUrl       String?
+  xp              Int           @default(0)
+  level           Int           @default(1)
+  currentStreak   Int           @default(0)
+  longestStreak   Int           @default(0)
+  coins           Int           @default(0)
+  equippedThemeId String?
+  equippedMedalId String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Self & Gamification relations
+  equippedTheme   GamificationItem? @relation("EquippedTheme", fields: [equippedThemeId], references: [id], onDelete: SetNull)
+  equippedMedal   GamificationItem? @relation("EquippedMedal", fields: [equippedMedalId], references: [id], onDelete: SetNull)
+
+  // Project relations
+  ownedProjects   Project[]     @relation("ProjectOwner")
+  memberships     ProjectMember[]
+
+  // Activity relations
+  createdActivities  Activity[] @relation("ActivityCreator")
+  assignedActivities Activity[] @relation("ActivityAssignee")
+  activityLogs       ActivityLog[]
+
+  // Gamification unlock relations
+  unlockedItems   UserUnlock[]
+
+  @@map("users")
+}
+
+model Project {
+  id            String          @id @default(uuid())
+  name          String
+  description   String?
+  colorHex      String          @default("#6366F1")
+  icon          String          @default("folder")
+  isTeamProject Boolean         @default(false)
+  ownerId       String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  owner         User            @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members       ProjectMember[]
+  activities    Activity[]
+
+  @@map("projects")
+}
+
+model ProjectMember {
+  id        String      @id @default(uuid())
+  projectId String
+  userId    String
+  role      ProjectRole @default(MEMBER)
+  joinedAt  DateTime    @default(now())
+
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@map("project_members")
+}
+
+model Activity {
+  id                 String            @id @default(uuid())
+  title              String
+  description        String?
+  type               ActivityType      @default(SINGLE)
+  recurrence         RecurrencePattern @default(NONE)
+  recurrenceInterval Int               @default(1)
+  status             ActivityStatus    @default(PENDING)
+  priority           ActivityPriority  @default(MEDIUM)
+  xpReward           Int               @default(50)
+  coinReward         Int               @default(10)
+  dueDate            DateTime?
+  projectId          String?
+  creatorId          String
+  assigneeId         String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  project            Project?          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator            User              @relation("ActivityCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  assignee           User?             @relation("ActivityAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  logs               ActivityLog[]
+
+  @@map("activities")
+}
+
+model ActivityLog {
+  id                 String   @id @default(uuid())
+  activityId         String
+  userId             String
+  completedAt        DateTime @default(now())
+  xpEarned           Int
+  coinsEarned        Int
+  streakBonusApplied Boolean  @default(false)
+
+  activity           Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("activity_logs")
+}
+
+model GamificationItem {
+  id          String     @id @default(uuid())
+  code        String     @unique
+  name        String
+  description String
+  type        RewardType
+  unlockLevel Int        @default(1)
+  costCoins   Int        @default(0)
+  metadata    Json       @default("{}")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  unlockedBy  UserUnlock[]
+  usersWithEquippedTheme User[] @relation("EquippedTheme")
+  usersWithEquippedMedal User[] @relation("EquippedMedal")
+
+  @@map("gamification_items")
+}
+
+model UserUnlock {
+  id         String           @id @default(uuid())
+  userId     String
+  itemId     String
+  unlockedAt DateTime         @default(now())
+
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item       GamificationItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemId])
+  @@map("user_unlocks")
+}

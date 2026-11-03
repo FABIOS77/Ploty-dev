@@ -1,0 +1,53 @@
+services:
+  ploty-db:
+    image: postgres:16-alpine
+    container_name: ploty-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ploty_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ploty_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-ploty_db}
+    ports:
+      - "${POSTGRES_EXTERNAL_PORT:-5434}:5432"
+    volumes:
+      - ploty_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ploty_user} -d ${POSTGRES_DB:-ploty_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ploty-network
+
+  ploty-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: ploty-api
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      PORT: ${PORT:-3000}
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-ploty_user}:${POSTGRES_PASSWORD:-ploty_secret}@ploty-db:5432/${POSTGRES_DB:-ploty_db}?schema=public"
+      JWT_SECRET: ${JWT_SECRET:-ploty_ultra_secure_jwt_secret_key_change_in_production_2026}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+    depends_on:
+      ploty-db:
+        condition: service_healthy
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    networks:
+      - ploty-network
+
+volumes:
+  ploty_pgdata:
+    name: ploty_pgdata
+
+networks:
+  ploty-network:
+    name: ploty-network
+    driver: bridge

@@ -1,0 +1,10 @@
+node_modules
+dist
+.git
+.gitignore
+.env
+npm-debug.log
+docker-data
+postgres-data
+README.md
+REPORTE_HITO_1.md
