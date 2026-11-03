@@ -25,9 +25,11 @@ describe('Ploty Core Integration & Gamification (E2E)', () => {
   let user2Token: string;
   let user2Id: string;
   let createdProjectId: string;
+  let singleActivityId: string;
+  let recurringActivityId: string;
+  let defaultThemeId: string;
 
   beforeAll(async () => {
-    // Ensure DATABASE_URL is set if running in test environment
     if (!process.env.DATABASE_URL) {
       process.env.DATABASE_URL =
         'postgresql://ploty_user:ploty_secret@localhost:5434/ploty_db?schema=public';
@@ -71,7 +73,6 @@ describe('Ploty Core Integration & Gamification (E2E)', () => {
   });
 
   afterAll(async () => {
-    // Final cleanup
     if (prisma) {
       await prisma.activityLog.deleteMany({
         where: { user: { email: { in: [testUser1.email, testUser2.email] } } },
@@ -111,6 +112,7 @@ describe('Ploty Core Integration & Gamification (E2E)', () => {
 
       user1Token = response.body.access_token;
       user1Id = response.body.user.id;
+      defaultThemeId = response.body.user.equippedTheme.id;
     });
 
     it('POST /auth/register -> should register User 2 (collaborator)', async () => {
@@ -243,12 +245,204 @@ describe('Ploty Core Integration & Gamification (E2E)', () => {
     it('POST /projects/:id/members -> should reject adding member if requester is not OWNER/ADMIN', async () => {
       await request(app.getHttpServer())
         .post(`/projects/${createdProjectId}/members`)
-        .set('Authorization', `Bearer ${user2Token}`) // User 2 is MEMBER
+        .set('Authorization', `Bearer ${user2Token}`)
         .send({
           usernameOrEmail: 'some_third_user',
           role: 'MEMBER',
         })
         .expect(403);
+    });
+  });
+
+  describe('3. Activities & Gamified Completion Flow', () => {
+    it('POST /activities -> should create a SINGLE task inside the collaborative project', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/activities')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({
+          title: 'Implement Core Security Layer',
+          description: 'Harden JWT and role-based policies',
+          type: 'SINGLE',
+          priority: 'HIGH',
+          projectId: createdProjectId,
+          assigneeId: user1Id,
+        })
+        .expect(201);
+
+      expect(response.body).toHaveProperty('id');
+      expect(response.body.type).toBe('SINGLE');
+      expect(response.body.priority).toBe('HIGH');
+      expect(response.body.xpReward).toBe(75);
+      expect(response.body.coinReward).toBe(25);
+      expect(response.body.status).toBe('PENDING');
+
+      singleActivityId = response.body.id;
+    });
+
+    it('POST /activities -> should create a RECURRING task inside the collaborative project', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/activities')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({
+          title: 'Daily Standup & Code Review',
+          description: 'Sync with team every morning',
+          type: 'RECURRING',
+          recurrence: 'DAILY',
+          recurrenceInterval: 1,
+          priority: 'MEDIUM',
+          projectId: createdProjectId,
+        })
+        .expect(201);
+
+      expect(response.body).toHaveProperty('id');
+      expect(response.body.type).toBe('RECURRING');
+      expect(response.body.recurrence).toBe('DAILY');
+      expect(response.body.xpReward).toBe(50);
+      expect(response.body.coinReward).toBe(15);
+
+      recurringActivityId = response.body.id;
+    });
+
+    it('POST /activities/:id/complete -> should complete SINGLE task, award XP/Coins and auto-unlock MEDAL_FIRST_BLOOD', async () => {
+      const response = await request(app.getHttpServer())
+        .post(`/activities/${singleActivityId}/complete`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+
+      expect(response.body.activity.status).toBe('COMPLETED');
+      expect(response.body.rewards.xpEarned).toBeGreaterThan(0);
+      expect(response.body.rewards.coinsEarned).toBeGreaterThan(0);
+      expect(response.body.updatedStats.currentStreak).toBe(1);
+
+      // Verify auto-unlock
+      const unlockedCodes = response.body.newlyUnlockedItems.map(
+        (item: any) => item.code,
+      );
+      expect(unlockedCodes).toContain('MEDAL_FIRST_BLOOD');
+    });
+
+    it('POST /activities/:id/complete -> should reject completing already completed SINGLE activity', async () => {
+      await request(app.getHttpServer())
+        .post(`/activities/${singleActivityId}/complete`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(400);
+    });
+
+    it('POST /activities/:id/complete -> should complete RECURRING task, advance dueDate and maintain PENDING', async () => {
+      const response = await request(app.getHttpServer())
+        .post(`/activities/${recurringActivityId}/complete`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+
+      expect(response.body.activity.status).toBe('PENDING');
+      expect(response.body.activity.dueDate).toBeDefined();
+      expect(response.body.rewards.xpEarned).toBeGreaterThan(0);
+      expect(response.body.rewards.coinsEarned).toBeGreaterThan(0);
+    });
+  });
+
+  describe('4. Gamification Shop, Catalog & Equip Flow', () => {
+    it('GET /gamification/catalog -> should return all 10+ items with unlocked status and affordability', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/gamification/catalog')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+
+      expect(Array.isArray(response.body)).toBe(true);
+      expect(response.body.length).toBeGreaterThanOrEqual(10);
+
+      const firstBlood = response.body.find(
+        (item: any) => item.code === 'MEDAL_FIRST_BLOOD',
+      );
+      expect(firstBlood).toBeDefined();
+      expect(firstBlood.isUnlocked).toBe(true); // Auto-unlocked in step 3
+    });
+
+    it('PATCH /gamification/equip -> should equip unlocked medal and default theme', async () => {
+      // Find the first blood medal id
+      const catalogRes = await request(app.getHttpServer())
+        .get('/gamification/catalog')
+        .set('Authorization', `Bearer ${user1Token}`);
+
+      const firstBlood = catalogRes.body.find(
+        (item: any) => item.code === 'MEDAL_FIRST_BLOOD',
+      );
+
+      const equipRes = await request(app.getHttpServer())
+        .patch('/gamification/equip')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({
+          themeId: defaultThemeId,
+          medalId: firstBlood.id,
+        })
+        .expect(200);
+
+      expect(equipRes.body.message).toBe('Equipped items updated successfully');
+      expect(equipRes.body.user.equippedTheme.id).toBe(defaultThemeId);
+      expect(equipRes.body.user.equippedMedal.id).toBe(firstBlood.id);
+    });
+
+    it('GET /gamification/leaderboard -> should return players ranked by XP', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/gamification/leaderboard')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+
+      expect(Array.isArray(response.body)).toBe(true);
+      expect(response.body.length).toBeGreaterThanOrEqual(1);
+      expect(response.body[0].rank).toBe(1);
+      expect(response.body[0].username).toBe(testUser1.username);
+    });
+  });
+
+  describe('5. Reports & Analytics Visual Series Flow', () => {
+    it('GET /reports/dashboard -> should return consolidated charts data and progress', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/reports/dashboard?days=7')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+
+      expect(response.body).toHaveProperty('overview');
+      expect(response.body.overview.totalActivities).toBeGreaterThanOrEqual(2);
+      expect(response.body.overview.completedActivities).toBeGreaterThanOrEqual(1);
+
+      expect(response.body).toHaveProperty('statusDistribution');
+      expect(response.body.statusDistribution).toHaveLength(4);
+
+      expect(response.body).toHaveProperty('priorityBreakdown');
+      expect(response.body.priorityBreakdown).toHaveLength(4);
+
+      expect(response.body).toHaveProperty('dailyTrend');
+      expect(response.body.dailyTrend).toHaveLength(7);
+
+      expect(response.body).toHaveProperty('recurrenceVsSingle');
+      expect(response.body.recurrenceVsSingle.single.totalExecutions).toBe(1);
+      expect(response.body.recurrenceVsSingle.recurring.totalExecutions).toBe(1);
+
+      expect(response.body).toHaveProperty('projectsProgress');
+      expect(response.body.projectsProgress.length).toBeGreaterThanOrEqual(1);
+
+      expect(response.body).toHaveProperty('actionProgressList');
+      expect(response.body.actionProgressList.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('GET /reports/projects/:projectId -> should return project specific analytics and team member contributions', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/reports/projects/${createdProjectId}`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+
+      expect(response.body.project.id).toBe(createdProjectId);
+      expect(response.body).toHaveProperty('statusDistribution');
+      expect(response.body).toHaveProperty('actionProgress');
+      expect(response.body).toHaveProperty('teamContributions');
+
+      const user1Contrib = response.body.teamContributions.find(
+        (c: any) => c.userId === user1Id,
+      );
+      expect(user1Contrib).toBeDefined();
+      expect(user1Contrib.completedCount).toBeGreaterThanOrEqual(1);
+      expect(user1Contrib.xpContributed).toBeGreaterThan(0);
     });
   });
 });

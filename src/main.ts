@@ -29,13 +29,16 @@ async function bootstrap() {
   const config = new DocumentBuilder()
     .setTitle('Ploty API')
     .setDescription(
-      'Gamified Project & Activity Management Platform - Backend Core REST API',
+      'Gamified Project & Activity Management Platform - Backend Core REST API (Hito 1 & 2)',
     )
-    .setVersion('1.0.0')
+    .setVersion('2.0.0')
     .addBearerAuth()
     .addTag('Auth', 'Authentication and registration endpoints')
     .addTag('Users', 'Player profile and social discovery')
     .addTag('Projects', 'Collaborative project management')
+    .addTag('Activities', 'Single and recurring activities with gamified completion')
+    .addTag('Gamification', 'Extreme themes, medals catalog, shop purchases and leaderboards')
+    .addTag('Reports', 'Analytical data series and project visual charts')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
