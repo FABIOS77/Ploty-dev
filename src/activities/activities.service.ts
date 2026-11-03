@@ -17,6 +17,7 @@ import {
   evaluateActivityStatus,
   evaluateAutoUnlocks,
   evaluateStreak,
+  formatUserProfile,
   map,
   pipe,
 } from '../common/fp';
@@ -504,25 +505,38 @@ export class ActivitiesService {
         });
       }
 
+      const formattedUser = formatUserProfile(updatedUser);
+
+      const rewardPayload = {
+        xpEarned: rewardsResult.xpEarned,
+        coinsEarned: rewardsResult.coinsEarned,
+        xpGained: rewardsResult.xpEarned,
+        coinsGained: rewardsResult.coinsEarned,
+        streakBonusApplied: rewardsResult.streakBonusApplied,
+        streakBonusMultiplier: rewardsResult.streakBonusMultiplier,
+        newLevel,
+        previousLevel,
+        leveledUp: levelUp,
+        newTotalXp: updatedUser.xp,
+        newCoins: updatedUser.coins,
+        streakDays: streakResult.newStreak,
+        currentStreak: streakResult.newStreak,
+      };
+
       return {
         activity: updatedActivity,
         log,
-        rewards: {
-          xpEarned: rewardsResult.xpEarned,
-          coinsEarned: rewardsResult.coinsEarned,
-          streakBonusApplied: rewardsResult.streakBonusApplied,
-          streakBonusMultiplier: rewardsResult.streakBonusMultiplier,
-        },
+        rewards: rewardPayload,
+        reward: rewardPayload,
         levelUp,
+        leveledUp: levelUp,
         previousLevel,
         newLevel,
         newlyUnlockedItems: newlyUnlocked,
+        updatedUser: formattedUser,
+        userStats: formattedUser.stats,
         updatedStats: {
-          xp: updatedUser.xp,
-          level: updatedUser.level,
-          coins: updatedUser.coins,
-          currentStreak: updatedUser.currentStreak,
-          longestStreak: updatedUser.longestStreak,
+          ...formattedUser.stats,
         },
       };
     });

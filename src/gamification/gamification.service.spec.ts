@@ -74,7 +74,7 @@ describe('GamificationService Unit Tests', () => {
     it('should upsert at least 10 items into GamificationItem catalog', async () => {
       prisma.gamificationItem.upsert.mockResolvedValue({});
       await service.seedInitialCatalog();
-      expect(prisma.gamificationItem.upsert).toHaveBeenCalledTimes(10);
+      expect(prisma.gamificationItem.upsert.mock.calls.length).toBeGreaterThanOrEqual(10);
     });
   });
 

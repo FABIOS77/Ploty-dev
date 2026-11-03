@@ -227,6 +227,16 @@ export const formatUserProfile = (user: UserEntityInput) => {
     email: user.email,
     username: user.username,
     avatarUrl: user.avatarUrl ?? null,
+    // Root level stats for direct frontend access
+    xp: stats.xp,
+    level: stats.level,
+    coins: stats.coins,
+    currentStreak: stats.currentStreak,
+    longestStreak: stats.longestStreak,
+    nextLevelXp: stats.nextLevelXp,
+    currentLevelBaseXp: stats.currentLevelBaseXp,
+    progressToNextLevelPercent: stats.progressToNextLevelPercent,
+    // Nested stats for backward-compatibility
     stats,
     equippedTheme: user.equippedTheme ?? null,
     equippedMedal: user.equippedMedal ?? null,

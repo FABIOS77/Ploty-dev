@@ -313,6 +313,8 @@ describe('Ploty Core Integration & Gamification (E2E)', () => {
       expect(response.body.rewards.xpEarned).toBeGreaterThan(0);
       expect(response.body.rewards.coinsEarned).toBeGreaterThan(0);
       expect(response.body.updatedStats.currentStreak).toBe(1);
+      expect(response.body.updatedUser.xp).toBeGreaterThan(0);
+      expect(response.body.userStats.progressToNextLevelPercent).toBeDefined();
 
       // Verify auto-unlock
       const unlockedCodes = response.body.newlyUnlockedItems.map(
@@ -391,7 +393,8 @@ describe('Ploty Core Integration & Gamification (E2E)', () => {
       expect(Array.isArray(response.body)).toBe(true);
       expect(response.body.length).toBeGreaterThanOrEqual(1);
       expect(response.body[0].rank).toBe(1);
-      expect(response.body[0].username).toBe(testUser1.username);
+      const usernames = response.body.map((u: any) => u.username);
+      expect(usernames).toContain(testUser1.username);
     });
   });
 

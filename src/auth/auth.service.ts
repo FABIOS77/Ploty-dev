@@ -24,18 +24,30 @@ export class AuthService {
   private async ensureDefaultTheme() {
     return this.prisma.gamificationItem.upsert({
       where: { code: 'THEME_DEFAULT' },
-      update: {},
+      update: {
+        name: 'Ploty Tactile Bento (Nivel 0)',
+        description:
+          'Tema base oficial Tactile Bento con canvas Sage #C5D4CA, tarjetas blancas y bordes táctiles',
+        metadata: {
+          primaryColor: '#7477FF',
+          backgroundColor: '#C5D4CA',
+          cardColor: '#FFFFFF',
+          textColor: '#312F30',
+        },
+      },
       create: {
         code: 'THEME_DEFAULT',
-        name: 'Ploty Classic Dark',
-        description: 'Default obsidian theme with neon purple accents',
+        name: 'Ploty Tactile Bento (Nivel 0)',
+        description:
+          'Tema base oficial Tactile Bento con canvas Sage #C5D4CA, tarjetas blancas y bordes táctiles',
         type: RewardType.THEME,
         unlockLevel: 1,
         costCoins: 0,
         metadata: {
-          primaryColor: '#6366F1',
-          backgroundColor: '#0F172A',
-          textColor: '#F8FAFC',
+          primaryColor: '#7477FF',
+          backgroundColor: '#C5D4CA',
+          cardColor: '#FFFFFF',
+          textColor: '#312F30',
         },
       },
     });

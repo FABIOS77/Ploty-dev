@@ -175,8 +175,13 @@ describe('ActivitiesService Unit Tests', () => {
       // With streak = 1, multiplier = 1.05 -> round(75 * 1.05) = 79, round(25 * 1.05) = 26
       expect(result.rewards.xpEarned).toBe(79);
       expect(result.rewards.coinsEarned).toBe(26);
+      expect(result.reward.xpGained).toBe(79);
+      expect(result.reward.coinsGained).toBe(26);
       expect(result.updatedStats.xp).toBe(79);
       expect(result.updatedStats.currentStreak).toBe(1);
+      expect(result.updatedUser.xp).toBe(79);
+      expect(result.updatedUser.level).toBe(1);
+      expect(result.userStats.progressToNextLevelPercent).toBeDefined();
     });
 
     it('should reject completing an already COMPLETED SINGLE activity', async () => {

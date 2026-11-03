@@ -122,7 +122,9 @@ export interface DailyCompletionPoint {
   readonly date: string;
   readonly completedCount: number;
   readonly xpEarned: number;
+  readonly xpGained: number;
   readonly coinsEarned: number;
+  readonly coinsGained: number;
 }
 
 export const buildDailyCompletionSeries = (
@@ -166,7 +168,9 @@ export const buildDailyCompletionSeries = (
         date: dateStr,
         completedCount,
         xpEarned: totals.xp,
+        xpGained: totals.xp,
         coinsEarned: totals.coins,
+        coinsGained: totals.coins,
       });
     }),
   );
@@ -181,11 +185,18 @@ export interface RecurrenceVsSingleStats {
     readonly totalCreated: number;
     readonly totalExecutions: number;
     readonly xpEarned: number;
+    readonly total: number;
+    readonly completed: number;
+    readonly completionRate: number;
+    readonly xpGained: number;
   };
   readonly recurring: {
     readonly totalCreated: number;
     readonly totalExecutions: number;
     readonly xpEarned: number;
+    readonly total: number;
+    readonly activeHabits: number;
+    readonly xpGained: number;
   };
 }
 
@@ -214,16 +225,27 @@ export const buildRecurrenceVsSingleStats = (
     0,
   );
 
+  const singleCompletedCount = singleActivities.filter((a) => a.status === 'COMPLETED').length;
+  const singleTotal = singleActivities.length;
+  const singleRate = singleTotal > 0 ? Math.round((singleCompletedCount / singleTotal) * 100) : 0;
+
   return Object.freeze({
     single: Object.freeze({
-      totalCreated: singleActivities.length,
+      totalCreated: singleTotal,
       totalExecutions: singleLogs.length,
       xpEarned: singleXp,
+      total: singleTotal,
+      completed: singleCompletedCount,
+      completionRate: singleRate,
+      xpGained: singleXp,
     }),
     recurring: Object.freeze({
       totalCreated: recurringActivities.length,
       totalExecutions: recurringLogs.length,
       xpEarned: recurringXp,
+      total: recurringActivities.length,
+      activeHabits: recurringActivities.length,
+      xpGained: recurringXp,
     }),
   });
 };

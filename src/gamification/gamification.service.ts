@@ -29,11 +29,27 @@ export class GamificationService implements OnModuleInit {
    */
   async seedInitialCatalog() {
     const items = [
-      // 4 Themes
+      // 5 Themes (Level 0 base + 4 unlockable themes)
+      {
+        code: 'THEME_DEFAULT',
+        name: 'Ploty Tactile Bento (Nivel 0)',
+        description:
+          'Tema base oficial Tactile Bento con canvas Sage #C5D4CA, tarjetas blancas y bordes táctiles',
+        type: RewardType.THEME,
+        unlockLevel: 1,
+        costCoins: 0,
+        metadata: {
+          primaryColor: '#7477FF',
+          backgroundColor: '#C5D4CA',
+          accentColor: '#F66554',
+          glowEffect: false,
+        },
+      },
       {
         code: 'THEME_DEFAULT_PLOTY',
         name: 'Ploty Indigo Core',
-        description: 'Default obsidian theme with neon purple and indigo accents',
+        description:
+          'Tema oscuro Obsidian Deep con acentos Indigo y azul eléctrico de alto contraste',
         type: RewardType.THEME,
         unlockLevel: 1,
         costCoins: 0,

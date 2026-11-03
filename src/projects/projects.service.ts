@@ -288,6 +288,7 @@ export class ProjectsService {
             email: true,
             avatarUrl: true,
             level: true,
+            xp: true,
           },
         },
       },
@@ -296,6 +297,7 @@ export class ProjectsService {
     return {
       message: 'Member successfully added to project',
       member: newMember,
+      ...newMember,
     };
   }
 
