@@ -145,6 +145,8 @@ describe('AuthService Unit Tests', () => {
         include: {
           equippedTheme: true,
           equippedMedal: true,
+          equippedFrame: true,
+          equippedTitle: true,
         },
       });
       expect(result.access_token).toBe('mocked_jwt_token_ploty');

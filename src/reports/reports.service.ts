@@ -14,6 +14,7 @@ import {
   calculateProjectProgress,
   computeGamificationStats,
   evaluateActivityStatus,
+  isActivityEffectivelyCompleted,
   map,
   pipe,
 } from '../common/fp';
@@ -92,7 +93,11 @@ export class ReportsService {
       },
       include: {
         activities: {
-          select: { status: true },
+          select: {
+            status: true,
+            type: true,
+            _count: { select: { logs: true } },
+          },
         },
       },
     });
@@ -101,9 +106,7 @@ export class ReportsService {
       userProjects,
       map((proj) => {
         const total = proj.activities.length;
-        const completed = proj.activities.filter(
-          (a) => a.status === 'COMPLETED',
-        ).length;
+        const completed = proj.activities.filter(isActivityEffectivelyCompleted).length;
         const progressPercent = calculateProjectProgress(proj.activities);
 
         return Object.freeze({

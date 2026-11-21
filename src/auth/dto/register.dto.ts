@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsString,
   IsUrl,
+  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -20,28 +21,35 @@ export class RegisterDto {
 
   @ApiProperty({
     example: 'alex_gamer',
-    description: 'Unique username for the player profile',
+    description: 'Unique username for the player profile (3-30 alphanumeric or underscores)',
   })
   @IsString()
   @IsNotEmpty({ message: 'Username is required' })
   @MinLength(3, { message: 'Username must be at least 3 characters long' })
   @MaxLength(30, { message: 'Username cannot exceed 30 characters' })
+  @Matches(/^[a-zA-Z0-9_]{3,30}$/, {
+    message:
+      'Username must contain only letters, numbers, and underscores (3-30 characters, no spaces)',
+  })
   username!: string;
 
   @ApiProperty({
     example: 'SecurePass123!',
-    description: 'User password (minimum 6 characters)',
+    description: 'User password (minimum 8 characters)',
   })
   @IsString()
   @IsNotEmpty({ message: 'Password is required' })
-  @MinLength(6, { message: 'Password must be at least 6 characters long' })
+  @MinLength(8, { message: 'Password must be at least 8 characters long' })
   password!: string;
 
   @ApiPropertyOptional({
     example: 'https://images.unsplash.com/photo-avatar.png',
-    description: 'Optional avatar URL',
+    description: 'Optional avatar URL (HTTPS required)',
   })
   @IsOptional()
-  @IsUrl({}, { message: 'Avatar URL must be a valid URL' })
+  @IsUrl(
+    { protocols: ['https'], require_protocol: true },
+    { message: 'Avatar URL must be a valid HTTPS URL' },
+  )
   avatarUrl?: string;
 }

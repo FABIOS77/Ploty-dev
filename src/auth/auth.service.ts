@@ -92,6 +92,8 @@ export class AuthService {
       include: {
         equippedTheme: true,
         equippedMedal: true,
+        equippedFrame: true,
+        equippedTitle: true,
       },
     });
 
@@ -115,6 +117,8 @@ export class AuthService {
       include: {
         equippedTheme: true,
         equippedMedal: true,
+        equippedFrame: true,
+        equippedTitle: true,
       },
     });
 

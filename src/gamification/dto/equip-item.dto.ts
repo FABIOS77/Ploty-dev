@@ -17,4 +17,20 @@ export class EquipItemDto {
   @IsOptional()
   @IsUUID()
   medalId?: string;
+
+  @ApiPropertyOptional({
+    example: '550e8400-e29b-41d4-a716-446655440002',
+    description: 'UUID of the unlocked avatar frame to equip',
+  })
+  @IsOptional()
+  @IsUUID()
+  frameId?: string;
+
+  @ApiPropertyOptional({
+    example: '550e8400-e29b-41d4-a716-446655440003',
+    description: 'UUID of the unlocked player title to equip',
+  })
+  @IsOptional()
+  @IsUUID()
+  titleId?: string;
 }

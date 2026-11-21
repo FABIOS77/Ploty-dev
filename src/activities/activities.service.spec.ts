@@ -1,10 +1,16 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ActivityPriority, ActivityType, RecurrencePattern } from '@prisma/client';
+import {
+  ActivityPriority,
+  ActivityStatus,
+  ActivityType,
+  RecurrencePattern,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivitiesService } from './activities.service';
 
@@ -34,7 +40,7 @@ describe('ActivitiesService Unit Tests', () => {
     priority: ActivityPriority.HIGH,
     xpReward: 75,
     coinReward: 25,
-    dueDate: new Date('2026-11-10T12:00:00.000Z'),
+    dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     projectId: null,
     creatorId: 'user-uuid-1',
     assigneeId: null,
@@ -225,6 +231,79 @@ describe('ActivitiesService Unit Tests', () => {
       expect(prisma.activity.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ status: 'PENDING' }),
+        }),
+      );
+    });
+
+    it('should block IDOR when an unauthorized user tries to complete another user activity', async () => {
+      prisma.activity.findUnique.mockResolvedValue(mockSingleActivity);
+
+      await expect(
+        service.completeActivity('act-single-1', 'intruder-uuid'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should enforce same-day UTC cooldown on RECURRING activities (409 Conflict)', async () => {
+      prisma.activity.findUnique.mockResolvedValue(mockRecurringActivity);
+      prisma.activityLog.findFirst.mockResolvedValue({
+        id: 'log-today',
+        activityId: 'act-recurring-1',
+        userId: 'user-uuid-1',
+        completedAt: new Date(), // completed today!
+      });
+
+      await expect(
+        service.completeActivity('act-recurring-1', 'user-uuid-1'),
+      ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('Security & Anti-cheat in updateActivity / createActivity', () => {
+    it('should reject direct status change to COMPLETED via PATCH /activities/:id', async () => {
+      prisma.activity.findUnique.mockResolvedValue(mockSingleActivity);
+
+      await expect(
+        service.updateActivity('act-single-1', 'user-uuid-1', {
+          status: ActivityStatus.COMPLETED,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should block IDOR on updateActivity and deleteActivity for unauthorized users', async () => {
+      prisma.activity.findUnique.mockResolvedValue(mockSingleActivity);
+
+      await expect(
+        service.updateActivity('act-single-1', 'intruder-uuid', {
+          title: 'Hacked',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+
+      await expect(
+        service.deleteActivity('act-single-1', 'intruder-uuid'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should clamp excessive xpReward to priority ceiling on createActivity', async () => {
+      prisma.activity.create.mockResolvedValue({
+        ...mockSingleActivity,
+        priority: ActivityPriority.LOW,
+        xpReward: 50,
+        coinReward: 30,
+      });
+
+      await service.createActivity('user-uuid-1', {
+        title: 'Low Priority Farm Attempt',
+        priority: ActivityPriority.LOW,
+        xpReward: 500,
+        coinReward: 250,
+      });
+
+      expect(prisma.activity.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            xpReward: 50,
+            coinReward: 30,
+          }),
         }),
       );
     });

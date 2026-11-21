@@ -12,6 +12,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   Min,
 } from 'class-validator';
 
@@ -40,6 +41,7 @@ export class UpdateActivityDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(365)
   recurrenceInterval?: number;
 
   @ApiPropertyOptional({ enum: ActivityStatus })
@@ -56,12 +58,14 @@ export class UpdateActivityDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(500)
   xpReward?: number;
 
   @ApiPropertyOptional({ example: 20 })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(250)
   coinReward?: number;
 
   @ApiPropertyOptional({ example: '2026-11-15T12:00:00.000Z' })

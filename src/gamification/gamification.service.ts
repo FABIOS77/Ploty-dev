@@ -227,7 +227,10 @@ export class GamificationService implements OnModuleInit {
       map((item) => {
         const isUnlocked = unlockedIdSet.has(item.id);
         const isEquipped =
-          user.equippedThemeId === item.id || user.equippedMedalId === item.id;
+          user.equippedThemeId === item.id ||
+          user.equippedMedalId === item.id ||
+          user.equippedFrameId === item.id ||
+          user.equippedTitleId === item.id;
         const canAfford =
           user.coins >= item.costCoins && user.level >= item.unlockLevel;
 
@@ -242,46 +245,54 @@ export class GamificationService implements OnModuleInit {
   }
 
   /**
-   * Purchase an item from the shop with pure validation
+   * Purchase an item from the shop with fully transactional validation and atomic coin deduction
    */
   async buyItem(itemId: string, userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        unlockedItems: true,
-      },
-    });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    const item = await this.prisma.gamificationItem.findUnique({
-      where: { id: itemId },
-    });
-
-    if (!item) {
-      throw new NotFoundException(`Item '${itemId}' not found in catalog`);
-    }
-
-    const unlockedIds = user.unlockedItems.map((u) => u.itemId);
-    const purchaseResult = canPurchaseItem(
-      { level: user.level, coins: user.coins },
-      item,
-      unlockedIds,
-    );
-
-    if (isErr(purchaseResult)) {
-      throw new BadRequestException(purchaseResult.error);
-    }
-
     return this.prisma.$transaction(async (tx) => {
-      await tx.user.update({
+      const user = await tx.user.findUnique({
         where: { id: userId },
-        data: {
-          coins: purchaseResult.value.remainingCoins,
+        include: {
+          unlockedItems: true,
         },
       });
+
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      const item = await tx.gamificationItem.findUnique({
+        where: { id: itemId },
+      });
+
+      if (!item) {
+        throw new NotFoundException(`Item '${itemId}' not found in catalog`);
+      }
+
+      const unlockedIds = user.unlockedItems.map((u) => u.itemId);
+      const purchaseResult = canPurchaseItem(
+        { level: user.level, coins: user.coins },
+        item,
+        unlockedIds,
+      );
+
+      if (isErr(purchaseResult)) {
+        throw new BadRequestException(purchaseResult.error);
+      }
+
+      // Atomic conditional coin deduction to prevent race conditions / double-spend
+      const deduction = await tx.user.updateMany({
+        where: {
+          id: userId,
+          coins: { gte: item.costCoins },
+        },
+        data: {
+          coins: { decrement: item.costCoins },
+        },
+      });
+
+      if (deduction.count !== 1) {
+        throw new BadRequestException('Monedas insuficientes');
+      }
 
       const unlock = await tx.userUnlock.create({
         data: {
@@ -302,7 +313,7 @@ export class GamificationService implements OnModuleInit {
   }
 
   /**
-   * Equip theme or medal
+   * Equip unlocked theme, medal, avatar frame, or title with strict slot-type validation
    */
   async equipItem(userId: string, dto: EquipItemDto) {
     const user = await this.prisma.user.findUnique({
@@ -317,25 +328,58 @@ export class GamificationService implements OnModuleInit {
     }
 
     const unlockedIdSet = new Set(user.unlockedItems.map((u) => u.itemId));
-    const updateData: any = {};
+    const updateData: Record<string, string> = {};
 
-    if (dto.themeId) {
-      if (!unlockedIdSet.has(dto.themeId)) {
+    const validateAndAssignSlot = async (
+      itemId: string | undefined,
+      allowedTypes: RewardType[],
+      fieldName: string,
+      slotLabel: string,
+    ) => {
+      if (!itemId) return;
+      if (!unlockedIdSet.has(itemId)) {
         throw new ForbiddenException(
-          'You have not unlocked this visual theme yet',
+          `You have not unlocked this ${slotLabel} yet`,
         );
       }
-      updateData.equippedThemeId = dto.themeId;
-    }
-
-    if (dto.medalId) {
-      if (!unlockedIdSet.has(dto.medalId)) {
-        throw new ForbiddenException(
-          'You have not unlocked this medal yet',
+      const item = await this.prisma.gamificationItem.findUnique({
+        where: { id: itemId },
+      });
+      if (!item) {
+        throw new NotFoundException(`Item '${itemId}' not found in catalog`);
+      }
+      if (!allowedTypes.includes(item.type)) {
+        throw new BadRequestException(
+          `Item '${item.name}' of type ${item.type} cannot be equipped in the ${slotLabel} slot`,
         );
       }
-      updateData.equippedMedalId = dto.medalId;
-    }
+      updateData[fieldName] = itemId;
+    };
+
+    await validateAndAssignSlot(
+      dto.themeId,
+      [RewardType.THEME],
+      'equippedThemeId',
+      'theme',
+    );
+    await validateAndAssignSlot(
+      dto.medalId,
+      [RewardType.MEDAL],
+      'equippedMedalId',
+      'medal',
+    );
+    await validateAndAssignSlot(
+      dto.frameId,
+      [RewardType.AVATAR_FRAME, RewardType.FRAME],
+      'equippedFrameId',
+      'frame',
+    );
+    await validateAndAssignSlot(
+      dto.titleId,
+      [RewardType.TITLE],
+      'equippedTitleId',
+      'title',
+    );
 
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },
@@ -343,6 +387,8 @@ export class GamificationService implements OnModuleInit {
       include: {
         equippedTheme: true,
         equippedMedal: true,
+        equippedFrame: true,
+        equippedTitle: true,
       },
     });
 
@@ -353,12 +399,28 @@ export class GamificationService implements OnModuleInit {
   }
 
   /**
-   * Leaderboard (global or project-filtered)
+   * Leaderboard (global or project-filtered with membership privacy check)
    */
-  async getLeaderboard(projectId?: string) {
+  async getLeaderboard(projectId?: string, requesterUserId?: string) {
     const whereClause: any = {};
 
     if (projectId) {
+      if (requesterUserId) {
+        const membership = await this.prisma.projectMember.findUnique({
+          where: {
+            projectId_userId: {
+              projectId,
+              userId: requesterUserId,
+            },
+          },
+        });
+        if (!membership) {
+          throw new ForbiddenException(
+            'You must be a member of this project to view its leaderboard',
+          );
+        }
+      }
+
       whereClause.memberships = {
         some: { projectId },
       };
@@ -369,6 +431,8 @@ export class GamificationService implements OnModuleInit {
       include: {
         equippedTheme: true,
         equippedMedal: true,
+        equippedFrame: true,
+        equippedTitle: true,
       },
       orderBy: [{ xp: 'desc' }, { currentStreak: 'desc' }],
       take: 50,
@@ -385,6 +449,8 @@ export class GamificationService implements OnModuleInit {
       longestStreak: user.longestStreak,
       equippedTheme: user.equippedTheme,
       equippedMedal: user.equippedMedal,
+      equippedFrame: user.equippedFrame,
+      equippedTitle: user.equippedTitle,
     }));
   }
 }

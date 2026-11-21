@@ -13,6 +13,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   Min,
 } from 'class-validator';
 
@@ -58,6 +59,7 @@ export class CreateActivityDto {
   })
   @IsInt()
   @Min(1)
+  @Max(365)
   @IsOptional()
   recurrenceInterval?: number;
 
@@ -72,19 +74,21 @@ export class CreateActivityDto {
 
   @ApiPropertyOptional({
     example: 50,
-    description: 'XP earned upon completion. Auto-calculated by priority if omitted.',
+    description: 'XP earned upon completion (0-500, capped by priority). Auto-calculated if omitted.',
   })
   @IsInt()
   @Min(0)
+  @Max(500)
   @IsOptional()
   xpReward?: number;
 
   @ApiPropertyOptional({
     example: 15,
-    description: 'Coins earned upon completion. Auto-calculated by priority if omitted.',
+    description: 'Coins earned upon completion (0-250, capped by priority). Auto-calculated if omitted.',
   })
   @IsInt()
   @Min(0)
+  @Max(250)
   @IsOptional()
   coinReward?: number;
 

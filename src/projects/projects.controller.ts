@@ -6,6 +6,8 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
+  Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -20,6 +22,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AddProjectMemberDto } from './dto/add-project-member.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { UpdateProjectDto } from './dto/update-project.dto';
 import { ProjectsService } from './projects.service';
 
 @ApiTags('Projects')
@@ -89,10 +92,44 @@ export class ProjectsController {
     description: 'Project not found',
   })
   async getProjectById(
-    @Param('id') projectId: string,
+    @Param('id', ParseUUIDPipe) projectId: string,
     @CurrentUser('id') userId: string,
   ) {
     return this.projectsService.getProjectById(projectId, userId);
+  }
+
+  @Patch(':id')
+  @ApiOperation({
+    summary: 'Update project details',
+    description:
+      'Allows OWNER or ADMIN to update project name, description, colorHex, icon, or isTeamProject.',
+  })
+  @ApiParam({ name: 'id', description: 'UUID of the project' })
+  @ApiResponse({ status: 200, description: 'Project updated successfully' })
+  @ApiResponse({ status: 403, description: 'Only OWNER or ADMIN can update project' })
+  @ApiResponse({ status: 404, description: 'Project not found' })
+  async updateProject(
+    @Param('id', ParseUUIDPipe) projectId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: UpdateProjectDto,
+  ) {
+    return this.projectsService.updateProject(projectId, userId, dto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({
+    summary: 'Delete a project',
+    description: 'Safely deletes a project and cascades memberships/activities. OWNER only.',
+  })
+  @ApiParam({ name: 'id', description: 'UUID of the project' })
+  @ApiResponse({ status: 200, description: 'Project deleted successfully' })
+  @ApiResponse({ status: 403, description: 'Only OWNER can delete project' })
+  @ApiResponse({ status: 404, description: 'Project not found' })
+  async deleteProject(
+    @Param('id', ParseUUIDPipe) projectId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.projectsService.deleteProject(projectId, userId);
   }
 
   @Post(':id/members')
@@ -119,7 +156,7 @@ export class ProjectsController {
     description: 'User is already a member',
   })
   async addMember(
-    @Param('id') projectId: string,
+    @Param('id', ParseUUIDPipe) projectId: string,
     @CurrentUser('id') requesterUserId: string,
     @Body() dto: AddProjectMemberDto,
   ) {
@@ -153,8 +190,8 @@ export class ProjectsController {
     description: 'Member not found',
   })
   async removeMember(
-    @Param('id') projectId: string,
-    @Param('userId') targetUserId: string,
+    @Param('id', ParseUUIDPipe) projectId: string,
+    @Param('userId', ParseUUIDPipe) targetUserId: string,
     @CurrentUser('id') requesterUserId: string,
   ) {
     return this.projectsService.removeMember(

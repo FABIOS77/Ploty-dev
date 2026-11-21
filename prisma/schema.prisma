@@ -51,6 +51,7 @@ enum RewardType {
   MEDAL
   TITLE
   AVATAR_FRAME
+  FRAME
 }
 
 // ==========================================
@@ -70,12 +71,16 @@ model User {
   coins           Int           @default(0)
   equippedThemeId String?
   equippedMedalId String?
+  equippedFrameId String?
+  equippedTitleId String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
   // Self & Gamification relations
   equippedTheme   GamificationItem? @relation("EquippedTheme", fields: [equippedThemeId], references: [id], onDelete: SetNull)
   equippedMedal   GamificationItem? @relation("EquippedMedal", fields: [equippedMedalId], references: [id], onDelete: SetNull)
+  equippedFrame   GamificationItem? @relation("EquippedFrame", fields: [equippedFrameId], references: [id], onDelete: SetNull)
+  equippedTitle   GamificationItem? @relation("EquippedTitle", fields: [equippedTitleId], references: [id], onDelete: SetNull)
 
   // Project relations
   ownedProjects   Project[]     @relation("ProjectOwner")
@@ -180,6 +185,8 @@ model GamificationItem {
   unlockedBy  UserUnlock[]
   usersWithEquippedTheme User[] @relation("EquippedTheme")
   usersWithEquippedMedal User[] @relation("EquippedMedal")
+  usersWithEquippedFrame User[] @relation("EquippedFrame")
+  usersWithEquippedTitle User[] @relation("EquippedTitle")
 
   @@map("gamification_items")
 }

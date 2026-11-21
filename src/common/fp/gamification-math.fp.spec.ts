@@ -7,7 +7,9 @@ import {
   canManageProjectMembers,
   computeGamificationStats,
   computeProjectSummary,
+  formatUserProfile,
   isProjectOwner,
+  resolveSafeActivityRewards,
   sanitizeSearchTerm,
 } from './gamification-math.fp';
 
@@ -141,6 +143,77 @@ describe('Gamification Pure Math Functions (gamification-math.fp)', () => {
         { status: 'PENDING' },
       ];
       expect(calculateProjectProgress(activities)).toBe(67);
+    });
+
+    it('should count RECURRING activities with recorded logs as completed for current cycle progress', () => {
+      const activities = [
+        { status: 'PENDING', type: 'RECURRING', _count: { logs: 3 } },
+        { status: 'PENDING', type: 'RECURRING', _count: { logs: 0 } },
+      ];
+      expect(calculateProjectProgress(activities)).toBe(50);
+
+      const withLogsArray = [
+        { status: 'PENDING', type: 'RECURRING', logs: [{ id: 'l1' }] },
+        { status: 'COMPLETED', type: 'SINGLE' },
+      ];
+      expect(calculateProjectProgress(withLogsArray)).toBe(100);
+    });
+  });
+
+  describe('resolveSafeActivityRewards (Anti-cheat priority ceilings)', () => {
+    it('should clamp rewards to priority ceilings', () => {
+      expect(resolveSafeActivityRewards('LOW', 999, 500)).toEqual({
+        xpReward: 50,
+        coinReward: 30,
+      });
+      expect(resolveSafeActivityRewards('MEDIUM', 500, 200)).toEqual({
+        xpReward: 100,
+        coinReward: 60,
+      });
+      expect(resolveSafeActivityRewards('HIGH', 450, 200)).toEqual({
+        xpReward: 200,
+        coinReward: 120,
+      });
+      expect(resolveSafeActivityRewards('CRITICAL', 500, 300)).toEqual({
+        xpReward: 350,
+        coinReward: 250,
+      });
+    });
+
+    it('should compute priority defaults when omitted', () => {
+      expect(resolveSafeActivityRewards('LOW')).toEqual({
+        xpReward: 25,
+        coinReward: 10,
+      });
+      expect(resolveSafeActivityRewards('CRITICAL')).toEqual({
+        xpReward: 120,
+        coinReward: 40,
+      });
+    });
+  });
+
+  describe('formatUserProfile', () => {
+    it('should expose equippedFrameId, equippedTitleId and cosmetic relations', () => {
+      const profile = formatUserProfile({
+        id: 'u-1',
+        email: 'demo@ploty.app',
+        username: 'fabio_demo',
+        xp: 450,
+        coins: 200,
+        equippedThemeId: 'theme-1',
+        equippedMedalId: 'medal-1',
+        equippedFrameId: 'frame-1',
+        equippedTitleId: 'title-1',
+        equippedFrame: { id: 'frame-1', code: 'FRAME_PLASMA_RING' },
+        equippedTitle: { id: 'title-1', code: 'TITLE_ARCHITECT' },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      expect(profile.equippedFrameId).toBe('frame-1');
+      expect(profile.equippedTitleId).toBe('title-1');
+      expect(profile.equippedFrame.code).toBe('FRAME_PLASMA_RING');
+      expect(profile.equippedTitle.code).toBe('TITLE_ARCHITECT');
     });
   });
 

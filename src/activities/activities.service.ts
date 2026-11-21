@@ -1,16 +1,21 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ActivityPriority, ActivityType, RecurrencePattern } from '@prisma/client';
+import {
+  ActivityPriority,
+  ActivityStatus,
+  ActivityType,
+  RecurrencePattern,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateActivityDto } from './dto/create-activity.dto';
 import { FilterActivitiesDto } from './dto/filter-activities.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
 import {
-  calculateActivityBaseRewards,
   calculateLevel,
   calculateNextDueDate,
   computeCompletionRewards,
@@ -20,11 +25,36 @@ import {
   formatUserProfile,
   map,
   pipe,
+  resolveSafeActivityRewards,
+  toUtcDayString,
 } from '../common/fp';
 
 @Injectable()
 export class ActivitiesService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Strict IDOR protection helper:
+   * Authenticated user must be creator, assignee, or active member of activity.projectId.
+   */
+  private assertActivityAccess(
+    activity: {
+      creatorId: string;
+      assigneeId?: string | null;
+      project?: { members: { userId: string }[] } | null;
+    },
+    userId: string,
+  ): void {
+    const isCreator = activity.creatorId === userId;
+    const isAssignee = activity.assigneeId === userId;
+    const isProjectMember = Boolean(
+      activity.project?.members?.some((m) => m.userId === userId),
+    );
+
+    if (!isCreator && !isAssignee && !isProjectMember) {
+      throw new ForbiddenException('Access denied to this activity');
+    }
+  }
 
   /**
    * Create a single or recurring activity (individual or project-bound)
@@ -64,11 +94,13 @@ export class ActivitiesService {
       }
     }
 
-    // Pure fallback calculation for XP and Coin rewards based on priority
-    const baseRewards = calculateActivityBaseRewards(dto.priority);
-    const xpReward = dto.xpReward !== undefined ? dto.xpReward : baseRewards.xpReward;
-    const coinReward =
-      dto.coinReward !== undefined ? dto.coinReward : baseRewards.coinReward;
+    // Anti-cheat pure calculation & clamping of XP and Coin rewards per priority ceiling
+    const effectivePriority = dto.priority || ActivityPriority.MEDIUM;
+    const { xpReward, coinReward } = resolveSafeActivityRewards(
+      effectivePriority,
+      dto.xpReward,
+      dto.coinReward,
+    );
 
     const activity = await this.prisma.activity.create({
       data: {
@@ -227,16 +259,8 @@ export class ActivitiesService {
       throw new NotFoundException(`Activity '${activityId}' not found`);
     }
 
-    // Access check
-    const isCreator = activity.creatorId === userId;
-    const isAssignee = activity.assigneeId === userId;
-    const isProjectMember = activity.project?.members.some(
-      (m) => m.userId === userId,
-    );
-
-    if (!isCreator && !isAssignee && !isProjectMember) {
-      throw new ForbiddenException('Access denied to this activity');
-    }
+    // Strict IDOR access check
+    this.assertActivityAccess(activity, userId);
 
     const evaluatedStatus = evaluateActivityStatus(activity, new Date());
     return {
@@ -267,16 +291,32 @@ export class ActivitiesService {
       throw new NotFoundException(`Activity '${activityId}' not found`);
     }
 
-    const isCreator = activity.creatorId === userId;
-    const isProjectManager = activity.project?.members.some(
-      (m) =>
-        m.userId === userId && (m.role === 'OWNER' || m.role === 'ADMIN'),
-    );
+    // Strict IDOR access check
+    this.assertActivityAccess(activity, userId);
 
-    if (!isCreator && !isProjectManager) {
-      throw new ForbiddenException(
-        'Only activity creator or project managers can update this activity',
+    // Block direct status bypass to COMPLETED
+    if (dto.status === ActivityStatus.COMPLETED) {
+      throw new BadRequestException(
+        'Usa el endpoint /activities/:id/complete para completar actividades',
       );
+    }
+
+    // Clamp rewards safely if priority or reward values are updated
+    let safeXpReward = dto.xpReward;
+    let safeCoinReward = dto.coinReward;
+    if (
+      dto.xpReward !== undefined ||
+      dto.coinReward !== undefined ||
+      dto.priority !== undefined
+    ) {
+      const targetPriority = dto.priority || activity.priority;
+      const clamped = resolveSafeActivityRewards(
+        targetPriority,
+        dto.xpReward !== undefined ? dto.xpReward : activity.xpReward,
+        dto.coinReward !== undefined ? dto.coinReward : activity.coinReward,
+      );
+      safeXpReward = clamped.xpReward;
+      safeCoinReward = clamped.coinReward;
     }
 
     const updated = await this.prisma.activity.update({
@@ -289,8 +329,8 @@ export class ActivitiesService {
         recurrenceInterval: dto.recurrenceInterval,
         status: dto.status,
         priority: dto.priority,
-        xpReward: dto.xpReward,
-        coinReward: dto.coinReward,
+        xpReward: safeXpReward,
+        coinReward: safeCoinReward,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
         assigneeId: dto.assigneeId,
       },
@@ -333,17 +373,8 @@ export class ActivitiesService {
       throw new NotFoundException(`Activity '${activityId}' not found`);
     }
 
-    const isCreator = activity.creatorId === userId;
-    const isProjectManager = activity.project?.members.some(
-      (m) =>
-        m.userId === userId && (m.role === 'OWNER' || m.role === 'ADMIN'),
-    );
-
-    if (!isCreator && !isProjectManager) {
-      throw new ForbiddenException(
-        'Not authorized to delete this activity',
-      );
-    }
+    // Strict IDOR access check
+    this.assertActivityAccess(activity, userId);
 
     await this.prisma.activity.delete({
       where: { id: activityId },
@@ -374,8 +405,34 @@ export class ActivitiesService {
         throw new NotFoundException(`Activity '${activityId}' not found`);
       }
 
+      // Strict IDOR check: must be creator, assignee, or active project member
+      this.assertActivityAccess(activity, userId);
+
       if (activity.type === 'SINGLE' && activity.status === 'COMPLETED') {
         throw new BadRequestException('Esta actividad única ya fue completada');
+      }
+
+      const now = new Date();
+
+      // Anti-farming cooldown for RECURRING activities: prevent multiple completions on the same UTC cycle day
+      if (activity.type === 'RECURRING') {
+        const lastSameActivityLog = await tx.activityLog.findFirst({
+          where: {
+            activityId: activity.id,
+            userId,
+          },
+          orderBy: { completedAt: 'desc' },
+        });
+
+        if (
+          lastSameActivityLog &&
+          toUtcDayString(new Date(lastSameActivityLog.completedAt)) ===
+            toUtcDayString(now)
+        ) {
+          throw new ConflictException(
+            'Esta actividad recurrente ya fue completada en el ciclo actual',
+          );
+        }
       }
 
       const user = await tx.user.findUnique({
@@ -391,8 +448,6 @@ export class ActivitiesService {
         where: { userId },
         orderBy: { completedAt: 'desc' },
       });
-
-      const now = new Date();
 
       // 3. Pure streak calculation
       const streakResult = evaluateStreak(
@@ -462,6 +517,12 @@ export class ActivitiesService {
           level: newLevel,
           currentStreak: streakResult.newStreak,
           longestStreak: streakResult.newLongestStreak,
+        },
+        include: {
+          equippedTheme: true,
+          equippedMedal: true,
+          equippedFrame: true,
+          equippedTitle: true,
         },
       });
 

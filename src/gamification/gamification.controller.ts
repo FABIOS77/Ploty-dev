@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -52,7 +53,7 @@ export class GamificationController {
   @ApiResponse({ status: 200, description: 'Item purchased and unlocked' })
   @ApiResponse({ status: 400, description: 'Insufficient funds or level too low' })
   async buyItem(
-    @Param('itemId') itemId: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
     @CurrentUser('id') userId: string,
   ) {
     return this.gamificationService.buyItem(itemId, userId);
@@ -60,11 +61,12 @@ export class GamificationController {
 
   @Patch('equip')
   @ApiOperation({
-    summary: 'Equip an unlocked theme or medal',
+    summary: 'Equip an unlocked theme, medal, frame or title',
     description:
-      'Equips a visual theme or medal to customize the user UI and public player badge.',
+      'Equips a visual theme, medal, avatar frame or title to customize the user UI and public player badge.',
   })
   @ApiResponse({ status: 200, description: 'Cosmetics equipped successfully' })
+  @ApiResponse({ status: 400, description: 'Item type does not match target slot' })
   @ApiResponse({ status: 403, description: 'Item not yet unlocked' })
   async equipItem(
     @CurrentUser('id') userId: string,
@@ -77,7 +79,7 @@ export class GamificationController {
   @ApiOperation({
     summary: 'Get player leaderboard ranking',
     description:
-      'Returns top players ordered by XP and active streak, optionally filtered by projectId.',
+      'Returns top players ordered by XP and active streak, optionally filtered by projectId (requires project membership).',
   })
   @ApiQuery({
     name: 'projectId',
@@ -85,7 +87,12 @@ export class GamificationController {
     description: 'Optional Project UUID to filter project-specific rankings',
   })
   @ApiResponse({ status: 200, description: 'Leaderboard ranked users' })
-  async getLeaderboard(@Query('projectId') projectId?: string) {
-    return this.gamificationService.getLeaderboard(projectId);
+  @ApiResponse({ status: 403, description: 'Not a member of the requested project' })
+  async getLeaderboard(
+    @CurrentUser('id') userId: string,
+    @Query('projectId', new ParseUUIDPipe({ optional: true }))
+    projectId?: string,
+  ) {
+    return this.gamificationService.getLeaderboard(projectId, userId);
   }
 }

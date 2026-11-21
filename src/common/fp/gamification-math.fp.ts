@@ -7,7 +7,75 @@ import { filter, pipe, reduce } from './fp-utils';
 
 export interface ActivityProgressItem {
   readonly status: string;
+  readonly type?: string;
+  readonly logs?: readonly unknown[];
+  readonly completionLogs?: readonly unknown[];
+  readonly _count?: { readonly logs?: number };
+  readonly completedCount?: number;
+  readonly executionCount?: number;
+  readonly lastCompletedAt?: Date | string | null;
 }
+
+/**
+ * Pure check for whether an activity counts as completed in project progress.
+ * SINGLE activities require status === 'COMPLETED'.
+ * RECURRING activities return to PENDING after each cycle, so they count as completed
+ * for the current cycle when at least one execution log/count is recorded.
+ */
+export const isActivityEffectivelyCompleted = (
+  activity: ActivityProgressItem,
+): boolean => {
+  if (activity.status === 'COMPLETED') {
+    return true;
+  }
+  if (activity.type === 'RECURRING') {
+    const logCount =
+      activity.logs?.length ??
+      activity.completionLogs?.length ??
+      activity._count?.logs ??
+      activity.completedCount ??
+      activity.executionCount ??
+      0;
+    return logCount > 0 || activity.lastCompletedAt != null;
+  }
+  return false;
+};
+
+/**
+ * Pure anti-cheat reward ceilings per priority
+ * LOW <= 50 XP, MEDIUM <= 100 XP, HIGH <= 200 XP, CRITICAL <= 350 XP
+ */
+export const PRIORITY_REWARD_CEILINGS: Readonly<
+  Record<
+    string,
+    Readonly<{ maxXp: number; maxCoins: number; defaultXp: number; defaultCoins: number }>
+  >
+> = Object.freeze({
+  LOW: Object.freeze({ maxXp: 50, maxCoins: 30, defaultXp: 25, defaultCoins: 10 }),
+  MEDIUM: Object.freeze({ maxXp: 100, maxCoins: 60, defaultXp: 50, defaultCoins: 15 }),
+  HIGH: Object.freeze({ maxXp: 200, maxCoins: 120, defaultXp: 75, defaultCoins: 25 }),
+  CRITICAL: Object.freeze({ maxXp: 350, maxCoins: 250, defaultXp: 120, defaultCoins: 40 }),
+});
+
+export const resolveSafeActivityRewards = (
+  priority: string = 'MEDIUM',
+  requestedXp?: number,
+  requestedCoins?: number,
+): Readonly<{ xpReward: number; coinReward: number }> => {
+  const limits =
+    PRIORITY_REWARD_CEILINGS[priority] || PRIORITY_REWARD_CEILINGS.MEDIUM;
+  const rawXp = requestedXp !== undefined ? requestedXp : limits.defaultXp;
+  const rawCoins =
+    requestedCoins !== undefined ? requestedCoins : limits.defaultCoins;
+
+  const xpReward = Math.max(0, Math.min(Math.floor(rawXp), limits.maxXp, 500));
+  const coinReward = Math.max(
+    0,
+    Math.min(Math.floor(rawCoins), limits.maxCoins, 250),
+  );
+
+  return Object.freeze({ xpReward, coinReward });
+};
 
 export interface GamificationProfileStats {
   readonly xp: number;
@@ -109,7 +177,7 @@ export const calculateProjectProgress = (
 
   const completedCount = pipe(
     activities,
-    filter((activity) => activity.status === 'COMPLETED'),
+    filter(isActivityEffectivelyCompleted),
     (completed) => completed.length,
   );
 
@@ -121,6 +189,7 @@ export const calculateProjectProgress = (
  */
 export interface ProjectActivitySummary {
   readonly total: number;
+  readonly totalCount: number;
   readonly completed: number;
   readonly pending: number;
   readonly inProgress: number;
@@ -135,6 +204,7 @@ export const computeProjectSummary = (
   if (total === 0) {
     return Object.freeze({
       total: 0,
+      totalCount: 0,
       completed: 0,
       pending: 0,
       inProgress: 0,
@@ -154,7 +224,11 @@ export const computeProjectSummary = (
     {} as Record<string, number>,
   )(activities);
 
-  const completed = counts['COMPLETED'] || 0;
+  const completed = pipe(
+    activities,
+    filter(isActivityEffectivelyCompleted),
+    (arr) => arr.length,
+  );
   const inProgress = counts['IN_PROGRESS'] || 0;
   const overdue = counts['OVERDUE'] || 0;
   const pending = counts['PENDING'] || 0;
@@ -162,6 +236,7 @@ export const computeProjectSummary = (
 
   return Object.freeze({
     total,
+    totalCount: total,
     completed,
     pending,
     inProgress,
@@ -208,8 +283,12 @@ export interface UserEntityInput {
   readonly coins?: number;
   readonly equippedThemeId?: string | null;
   readonly equippedMedalId?: string | null;
+  readonly equippedFrameId?: string | null;
+  readonly equippedTitleId?: string | null;
   readonly equippedTheme?: any;
   readonly equippedMedal?: any;
+  readonly equippedFrame?: any;
+  readonly equippedTitle?: any;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -238,8 +317,14 @@ export const formatUserProfile = (user: UserEntityInput) => {
     progressToNextLevelPercent: stats.progressToNextLevelPercent,
     // Nested stats for backward-compatibility
     stats,
+    equippedThemeId: user.equippedThemeId ?? user.equippedTheme?.id ?? null,
+    equippedMedalId: user.equippedMedalId ?? user.equippedMedal?.id ?? null,
+    equippedFrameId: user.equippedFrameId ?? user.equippedFrame?.id ?? null,
+    equippedTitleId: user.equippedTitleId ?? user.equippedTitle?.id ?? null,
     equippedTheme: user.equippedTheme ?? null,
     equippedMedal: user.equippedMedal ?? null,
+    equippedFrame: user.equippedFrame ?? null,
+    equippedTitle: user.equippedTitle ?? null,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   });

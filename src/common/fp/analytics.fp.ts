@@ -139,13 +139,15 @@ export const buildDailyCompletionSeries = (
     toUtcDayString(new Date(log.completedAt)),
   )(logs);
 
-  // Generate sequence of dates from (referenceDate - daysCount + 1) to referenceDate
-  const daysArray: string[] = [];
-  for (let i = count - 1; i >= 0; i--) {
-    const d = new Date(referenceDate.getTime());
-    d.setUTCDate(d.getUTCDate() - i);
-    daysArray.push(toUtcDayString(d));
-  }
+  // Generate sequence of dates from (referenceDate - daysCount + 1) to referenceDate purely
+  const daysArray: readonly string[] = Object.freeze(
+    Array.from({ length: count }, (_, idx) => {
+      const offset = count - 1 - idx;
+      const d = new Date(referenceDate.getTime());
+      d.setUTCDate(d.getUTCDate() - offset);
+      return toUtcDayString(d);
+    }),
+  );
 
   return pipe(
     daysArray,

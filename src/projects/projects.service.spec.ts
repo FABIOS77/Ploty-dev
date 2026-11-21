@@ -52,6 +52,8 @@ describe('ProjectsService Unit Tests', () => {
         create: jest.fn(),
         findMany: jest.fn(),
         findUnique: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
       },
       projectMember: {
         create: jest.fn(),
@@ -219,6 +221,50 @@ describe('ProjectsService Unit Tests', () => {
 
       await expect(
         service.removeMember('project-uuid-1', 'owner-uuid', 'owner-uuid'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('updateProject & deleteProject', () => {
+    it('should allow OWNER to update project details', async () => {
+      prisma.project.findUnique.mockResolvedValue(mockProject);
+      prisma.project.update.mockResolvedValue({
+        ...mockProject,
+        name: 'Updated Name',
+        isTeamProject: false,
+      });
+
+      const res = await service.updateProject('project-uuid-1', 'owner-uuid', {
+        name: 'Updated Name',
+        isTeamProject: false,
+      });
+
+      expect(res.name).toBe('Updated Name');
+      expect(res.isTeamProject).toBe(false);
+    });
+
+    it('should forbid MEMBER from updating project', async () => {
+      prisma.project.findUnique.mockResolvedValue({
+        ...mockProject,
+        members: [
+          { id: 'm1', projectId: 'project-uuid-1', userId: 'member-uuid', role: ProjectRole.MEMBER },
+        ],
+      });
+
+      await expect(
+        service.updateProject('project-uuid-1', 'member-uuid', { name: 'Nope' }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should allow OWNER to delete project and forbid non-OWNER', async () => {
+      prisma.project.findUnique.mockResolvedValue(mockProject);
+      prisma.project.delete.mockResolvedValue(mockProject);
+
+      const res = await service.deleteProject('project-uuid-1', 'owner-uuid');
+      expect(res.deletedProjectId).toBe('project-uuid-1');
+
+      await expect(
+        service.deleteProject('project-uuid-1', 'admin-uuid'),
       ).rejects.toThrow(ForbiddenException);
     });
   });

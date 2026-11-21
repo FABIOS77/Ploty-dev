@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -71,7 +72,7 @@ export class ActivitiesController {
   @ApiResponse({ status: 200, description: 'Activity detail' })
   @ApiResponse({ status: 404, description: 'Activity not found' })
   async getActivityById(
-    @Param('id') activityId: string,
+    @Param('id', ParseUUIDPipe) activityId: string,
     @CurrentUser('id') userId: string,
   ) {
     return this.activitiesService.getActivityById(activityId, userId);
@@ -85,7 +86,7 @@ export class ActivitiesController {
   @ApiParam({ name: 'id', description: 'Activity UUID' })
   @ApiResponse({ status: 200, description: 'Activity updated' })
   async updateActivity(
-    @Param('id') activityId: string,
+    @Param('id', ParseUUIDPipe) activityId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: UpdateActivityDto,
   ) {
@@ -100,7 +101,7 @@ export class ActivitiesController {
   @ApiParam({ name: 'id', description: 'Activity UUID' })
   @ApiResponse({ status: 200, description: 'Activity deleted' })
   async deleteActivity(
-    @Param('id') activityId: string,
+    @Param('id', ParseUUIDPipe) activityId: string,
     @CurrentUser('id') userId: string,
   ) {
     return this.activitiesService.deleteActivity(activityId, userId);
@@ -123,7 +124,7 @@ export class ActivitiesController {
     description: 'Single activity already completed',
   })
   async completeActivity(
-    @Param('id') activityId: string,
+    @Param('id', ParseUUIDPipe) activityId: string,
     @CurrentUser('id') userId: string,
   ) {
     return this.activitiesService.completeActivity(activityId, userId);

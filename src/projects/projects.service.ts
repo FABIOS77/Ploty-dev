@@ -9,9 +9,11 @@ import { ProjectRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AddProjectMemberDto } from './dto/add-project-member.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { UpdateProjectDto } from './dto/update-project.dto';
 import {
   canManageProjectMembers,
   computeProjectSummary,
+  isProjectOwner,
   map,
   pipe,
   sanitizeSearchTerm,
@@ -65,6 +67,8 @@ export class ProjectsService {
           select: {
             id: true,
             status: true,
+            type: true,
+            _count: { select: { logs: true } },
           },
         },
       },
@@ -116,6 +120,8 @@ export class ProjectsService {
           select: {
             id: true,
             status: true,
+            type: true,
+            _count: { select: { logs: true } },
           },
         },
       },
@@ -188,6 +194,7 @@ export class ProjectsService {
             coinReward: true,
             dueDate: true,
             assigneeId: true,
+            _count: { select: { logs: true } },
           },
         },
       },
@@ -352,6 +359,122 @@ export class ProjectsService {
     return {
       message: 'Member removed from project successfully',
       removedUserId: targetUserId,
+    };
+  }
+
+  /**
+   * Update project metadata (OWNER or ADMIN only)
+   */
+  async updateProject(
+    projectId: string,
+    requesterUserId: string,
+    dto: UpdateProjectDto,
+  ) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { members: true },
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID '${projectId}' not found`);
+    }
+
+    const requesterMember = project.members.find(
+      (m) => m.userId === requesterUserId,
+    );
+
+    if (!requesterMember || !canManageProjectMembers(requesterMember.role)) {
+      throw new ForbiddenException(
+        'Only project OWNER or ADMIN can update project details',
+      );
+    }
+
+    const updated = await this.prisma.project.update({
+      where: { id: projectId },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name } : {}),
+        ...(dto.description !== undefined ? { description: dto.description } : {}),
+        ...(dto.colorHex !== undefined ? { colorHex: dto.colorHex } : {}),
+        ...(dto.icon !== undefined ? { icon: dto.icon } : {}),
+        ...(dto.isTeamProject !== undefined
+          ? { isTeamProject: dto.isTeamProject }
+          : {}),
+      },
+      include: {
+        owner: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            avatarUrl: true,
+          },
+        },
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+                email: true,
+                avatarUrl: true,
+                level: true,
+                currentStreak: true,
+              },
+            },
+          },
+        },
+        activities: {
+          select: {
+            id: true,
+            status: true,
+            type: true,
+            _count: { select: { logs: true } },
+          },
+        },
+      },
+    });
+
+    const summary = computeProjectSummary(updated.activities);
+
+    return {
+      ...updated,
+      memberCount: updated.members.length,
+      progressSummary: summary,
+    };
+  }
+
+  /**
+   * Delete a project safely (OWNER only)
+   */
+  async deleteProject(projectId: string, requesterUserId: string) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { members: true },
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID '${projectId}' not found`);
+    }
+
+    const requesterMember = project.members.find(
+      (m) => m.userId === requesterUserId,
+    );
+
+    const isOwner =
+      project.ownerId === requesterUserId ||
+      isProjectOwner(requesterMember?.role);
+
+    if (!isOwner) {
+      throw new ForbiddenException('Only the project OWNER can delete this project');
+    }
+
+    await this.prisma.project.delete({
+      where: { id: projectId },
+    });
+
+    return {
+      message: 'Project deleted successfully',
+      deletedProjectId: projectId,
     };
   }
 }

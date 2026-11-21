@@ -1,7 +1,9 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -33,15 +35,25 @@ export class ReportsController {
   @ApiQuery({
     name: 'days',
     required: false,
-    example: 14,
-    description: 'Number of past days for trend analysis (default: 14)',
+    example: 30,
+    description: 'Number of past days for trend analysis (integer 1-365, default: 30)',
   })
   @ApiResponse({ status: 200, description: 'Dashboard metrics retrieved' })
+  @ApiResponse({ status: 400, description: 'Invalid days parameter (must be integer 1-365)' })
   async getDashboard(
     @CurrentUser('id') userId: string,
-    @Query('days') days?: number,
+    @Query('days') days?: string,
   ) {
-    const daysCount = days ? Number(days) : 14;
+    let daysCount = 30;
+    if (days !== undefined && days !== '') {
+      const parsed = Number(days);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 365) {
+        throw new BadRequestException(
+          'Query parameter "days" must be an integer between 1 and 365',
+        );
+      }
+      daysCount = parsed;
+    }
     return this.reportsService.getDashboardReport(userId, daysCount);
   }
 
@@ -55,7 +67,7 @@ export class ReportsController {
   @ApiResponse({ status: 200, description: 'Project report retrieved' })
   @ApiResponse({ status: 403, description: 'Not a member of the project' })
   async getProjectReport(
-    @Param('projectId') projectId: string,
+    @Param('projectId', ParseUUIDPipe) projectId: string,
     @CurrentUser('id') userId: string,
   ) {
     return this.reportsService.getProjectReport(projectId, userId);

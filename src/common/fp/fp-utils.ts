@@ -153,23 +153,21 @@ export const reduceList = <T, R>(
 ): R => reduce(reducer, initialValue)(list);
 
 /**
- * Pure groupBy
+ * Pure immutable groupBy using reduce (no loops, no .push mutations)
  */
 export const groupBy =
   <T, K extends string | number | symbol>(keyFn: (item: T) => K) =>
   (list: readonly T[]): Readonly<Record<K, readonly T[]>> => {
-    const result = {} as Record<K, T[]>;
-    for (const item of list) {
-      const key = keyFn(item);
-      if (!result[key]) {
-        result[key] = [];
-      }
-      result[key].push(item);
-    }
-    // Freeze all grouped arrays and the parent object
-    const frozenGroups = {} as Record<K, readonly T[]>;
-    for (const key of Object.keys(result) as K[]) {
-      frozenGroups[key] = Object.freeze(result[key]);
-    }
-    return Object.freeze(frozenGroups);
+    const grouped = list.reduce(
+      (acc, item) => {
+        const key = keyFn(item);
+        const existing = acc[key] ?? [];
+        return {
+          ...acc,
+          [key]: Object.freeze([...existing, item]),
+        };
+      },
+      {} as Record<K, readonly T[]>,
+    );
+    return Object.freeze(grouped);
   };

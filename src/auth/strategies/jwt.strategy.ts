@@ -1,3 +1,6 @@
+import * as dotenv from 'dotenv';
+dotenv.config();
+
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
@@ -12,12 +15,17 @@ export interface JwtPayload {
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(private readonly prisma: PrismaService) {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret || jwtSecret.trim().length === 0) {
+      throw new Error(
+        'FATAL: JWT_SECRET environment variable is required and cannot use an insecure fallback.',
+      );
+    }
+
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey:
-        process.env.JWT_SECRET ||
-        'ploty_ultra_secure_jwt_secret_key_change_in_production_2026',
+      secretOrKey: jwtSecret,
     });
   }
 
@@ -27,6 +35,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       include: {
         equippedTheme: true,
         equippedMedal: true,
+        equippedFrame: true,
+        equippedTitle: true,
       },
     });
 

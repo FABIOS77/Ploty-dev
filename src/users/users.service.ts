@@ -17,6 +17,8 @@ export class UsersService {
       include: {
         equippedTheme: true,
         equippedMedal: true,
+        equippedFrame: true,
+        equippedTitle: true,
         unlockedItems: {
           include: {
             item: true,
