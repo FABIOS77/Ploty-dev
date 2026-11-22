@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   formatUserProfile,
@@ -6,6 +10,7 @@ import {
   pipe,
   sanitizeSearchTerm,
 } from '../common/fp';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @Injectable()
 export class UsersService {
@@ -36,6 +41,68 @@ export class UsersService {
     // Pure functional extraction of unlocked items
     const unlockedMedals = pipe(
       user.unlockedItems,
+      map((unlock) => unlock.item),
+    );
+
+    return {
+      ...baseProfile,
+      unlockedMedals,
+    };
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!currentUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (dto.username !== undefined && dto.username !== currentUser.username) {
+      const existingUsername = await this.prisma.user.findFirst({
+        where: {
+          username: dto.username,
+          id: { not: userId },
+        },
+      });
+
+      if (existingUsername) {
+        throw new ConflictException('Ese nombre de usuario ya está en uso');
+      }
+    }
+
+    const normalizedAvatarUrl =
+      dto.avatarUrl === undefined
+        ? undefined
+        : dto.avatarUrl === null || dto.avatarUrl.trim() === ''
+          ? null
+          : dto.avatarUrl.trim();
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(dto.username !== undefined ? { username: dto.username } : {}),
+        ...(normalizedAvatarUrl !== undefined
+          ? { avatarUrl: normalizedAvatarUrl }
+          : {}),
+      },
+      include: {
+        equippedTheme: true,
+        equippedMedal: true,
+        equippedFrame: true,
+        equippedTitle: true,
+        unlockedItems: {
+          include: {
+            item: true,
+          },
+        },
+      },
+    });
+
+    const baseProfile = formatUserProfile(updatedUser);
+    const unlockedMedals = pipe(
+      updatedUser.unlockedItems ?? [],
       map((unlock) => unlock.item),
     );
 
